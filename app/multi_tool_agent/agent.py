@@ -215,12 +215,147 @@ async def select_guest(
             'error_message': f'Guest with ID {guest_id} not found.'
         }
 
+async def create_guest(
+    tool_context: ToolContext,
+    first_name: str,
+    last_name: str,
+    username: str,
+    email: str,
+    phone_number: str = "",
+    gender: int = 0,
+    date_of_birth: str = ""
+) -> dict:
+    """Create a new guest with the provided details.
+    
+    This tool creates a new guest in the Zenoti system with the provided details.
+    
+    Args:
+        first_name (str): Guest's first name
+        last_name (str): Guest's last name
+        username (str): Guest's username
+        email (str): Guest's email address
+        phone_number (str, optional): Guest's phone number
+        gender (int, optional): Guest's gender (0: Not specified, 1: Male, 2: Female). Default is 0.
+        date_of_birth (str, optional): Guest's date of birth in YYYY-MM-DD format
+    
+    Returns:
+        dict: Information about the created guest with status indicating success or failure
+    """
+    
+    # Create the API endpoint URL
+    url = f'{HOST}/api/Guests/Add'
+    
+    # Create mobile phone model if phone number is provided
+    mobile_phone_model = None
+    if phone_number:
+        mobile_phone_model = {
+            "Number": phone_number,
+            "DisplayNumber": phone_number
+        }
+    
+    # Prepare the payload
+    payload = {
+        "CenterId": app_context['center_id'],
+        "Guest": {
+            "Id": None,
+            "FirstName": first_name,
+            "LastName": last_name,
+            "Code": None,
+            "Username": username,
+            "PostalCode": None,
+            "Address1": None,
+            "City": None,
+            "State": None,
+            "Country": None,
+            "DOB_IncompleteYear": None,
+            "DateOfBirth": date_of_birth,
+            "IsMinors": date_of_birth and (
+                datetime.datetime.strptime(date_of_birth, "%Y-%m-%d").date() > 
+                (datetime.datetime.now() - datetime.timedelta(days=365*18)).date()
+            ),
+            "AnniversaryDate": None,
+            "Email": email,
+            "Room": None,
+            "Gender": gender,
+            "MobileNumber": phone_number,
+            "MobilePhoneModel": mobile_phone_model,
+            "WorkPhone": None,
+            "WorkPhoneModel": None,
+            "HomePhone": None,
+            "HomePhoneModel": None,
+            "RelationshipManager": None,
+            "Nationality": None,
+            "ReferralSource": None,
+            "ReferredGuestId": None,
+            "ReceiveMarketingSMS": False,
+            "ReceiveTransactionalSMS": True,
+            "ReceiveTransactionalEmail": True,
+            "ReceiveMarketingEmail": False,
+            "ReceiveLPStmt": True,
+            "OptInForLoyaltyProgram": True,
+            "PreferredPronounId": None,
+            "PreferredPronoun": None,
+            "GuestMarketingLoyaltyOptIn": False
+        },
+        "Validate": True
+    }
+    
+    # Prepare headers with bearer token
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        # Make the API request
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()  # Raise exception for non-200 status codes
+        
+        # Parse the response
+        data = response.json()
+        
+        # Check for errors in the response
+        if data.get('Error'):
+            return {
+                'status': 'error',
+                'error_message': f'API error: {data.get("Error")}'
+            }
+        
+        # Create a summary of the created guest
+        created_guest = {
+            'guestId': data.get('GuestId'),
+            'firstName': first_name,
+            'lastName': last_name,
+            'email': email,
+            'phoneNumber': phone_number,
+            'username': username,
+            'gender': 'Male' if gender == 1 else 'Female' if gender == 2 else 'Not specified',
+            'dateOfBirth': date_of_birth
+        }
+        
+        # Store the created guest in state
+        tool_context.state['created_guest'] = created_guest
+        tool_context.state['selected_guest'] = created_guest
+        
+        return {
+            'status': 'success',
+            'message': f'Guest {first_name} {last_name} created successfully',
+            'guest': created_guest
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'error_message': f'Failed to create guest: {str(e)}'
+        }
+
+
 
 root_agent = Agent(
     name="service_search_agent",
     model="gemini-2.0-flash-exp",
     description=(
-        "Agent to search for services and guests and select them"
+        "Agent to search for services and guests and select them and also create a new guest if the guest is not in the system"
     ),
     instruction=(
         "You are a helpful agent who can search for services and guests. "
@@ -228,8 +363,9 @@ root_agent = Agent(
         "You can select a service from the list of services. "
         "You can select a guest from the list of guests. "
         "You are done when you have selected both a service and a guest"
+        "You can also create a new guest if the guest is not in the system. You have to ask the user for the guest details and then create the guest using the create_guest tool."
     ),
-    tools=[search_services, select_service, search_guests, select_guest],
+    tools=[search_services, select_service, search_guests, select_guest, create_guest],
 )
 
 
