@@ -1,0 +1,33 @@
+# Guidelines for Defining Effective Tool Functions in Python
+
+When defining Python functions intended to be used as tools for an AI agent, follow these guidelines:
+
+## Function Naming
+- Use descriptive, verb-noun based names that clearly indicate the action (e.g., `get_weather`, `search_documents`).
+- Avoid generic names (e.g., `run`, `process`) or ambiguous names (e.g., `do_stuff`). The name is a primary identifier for tool selection.
+
+## Parameters (Arguments)
+- Use clear and descriptive parameter names (e.g., `city` instead of `c`).
+- Provide type hints for ALL parameters (e.g., `city: str`, `user_id: int`, `items: list[str]`).
+- Ensure all parameter types are JSON serializable (standard types like `str`, `int`, `float`, `bool`, `list`, `dict` are generally safe).
+- **CRITICAL:** Do NOT set default values for parameters (e.g., `def my_func(param1: str = "default")`). Default values are not reliably handled by the models. All necessary information must be derived from context or explicitly requested.
+
+## Return Type
+- The function's return value MUST be a `dict`.
+- Design the dictionary keys and values to be descriptive and easily understood by the LLM.
+- Include meaningful keys. Instead of just an error code, return `{'status': 'error', 'error_message': 'Database connection failed'}`.
+- **Highly Recommended:** Include a `status` key (e.g., 'success', 'error', 'pending', 'ambiguous') to clearly indicate the outcome of the tool execution.
+
+## Docstrings
+- **CRITICAL:** The docstring is the primary source of information for the LLM.
+- Clearly state WHAT the tool does (purpose and limitations).
+- Explain WHEN the tool should be used (provide context or example scenarios).
+- Describe EACH parameter clearly, explaining what information is needed.
+- Describe the structure and meaning of the expected `dict` return value, especially the different `status` values and associated data keys.
+- **CRITICAL:** Do NOT describe the injected `ToolContext` parameter. Avoid mentioning `tool_context: ToolContext` in the docstring description.
+
+## Simplicity and Focus
+- Keep tools focused: Each tool should perform one well-defined task.
+- Fewer parameters are better: Models handle tools with fewer, clear parameters more reliably.
+- Use simple data types: Prefer basic types (`str`, `int`, `bool`, `list`, `dict`, etc.) over complex custom classes or nested structures as parameters where possible.
+- Decompose complex tasks: Break down functions performing multiple logical steps into smaller, focused tools (e.g., separate `update_user_name`, `update_user_address` instead of one large `update_user_profile`).
