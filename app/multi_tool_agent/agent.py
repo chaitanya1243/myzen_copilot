@@ -6,6 +6,7 @@ from google.genai import types
 from google.adk.tools import ToolContext, FunctionTool
 
 import requests
+from typing import Optional
 
 API_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IkNGRTFFNDFEMEQwMEQ5RDIxRUE1M0EwQzgxM0EyRkZFRkY3QkUyN0FSUzI1NiIsInR5cCI6ImF0K2p3dCIsIng1dCI6InotSGtIUTBBMmRJZXBUb01nVG92X3Y5NzRubyJ9.eyJuYmYiOjE3NDU2NDIyNjksImV4cCI6MTc0NTY3ODI2OSwiaXNzIjoiaHR0cHM6Ly9pZHMuemVub3RpLmNvbSIsImF1ZCI6ImFwaSIsImNsaWVudF9pZCI6IjZjM2NmZTI2LTk4OTQtNGE3ZS05MjlhLWM5ODg5YzliYmVkMSIsInN1YiI6ImIxMmIyYmE2LTM0ZmYtNDk0Ny05OGU3LWE3NjE4OTMzM2I3NSIsImF1dGhfdGltZSI6MTc0NTEyNzg1OSwiaWRwIjoibG9jYWwiLCJ1c2VyX2lkIjoiYjEyYjJiYTYtMzRmZi00OTQ3LTk4ZTctYTc2MTg5MzMzYjc1Iiwib3JnX2lkIjoiNmIwMjliZTUtNjQ1Yy00ZjgxLTg4MmMtZTRlYjU5ZTE0MmQ0IiwiYWNjX25hbWUiOiJhbXJzMDEiLCJjZW50ZXJfaWQiOiJiYzc3Yjk4Mi0yYjA1LTQ5ZWItYTQxZi02ZGY4Mzc0MzFlYmIiLCJ0aW1lX3pvbmVfaWQiOiI2OCIsImN1bHR1cmVfaWQiOiI0MyIsImN1cnJlbmN5X2lkIjoiMTQ4Iiwiem9uZV9pZCI6IiIsImxhc3RfZGF0ZSI6IiIsImltbyI6IkZhbHNlIiwibG9naW5fdXNlcl90eXBlIjoiRW1wbG95ZWUiLCJzb3VyY2VfYXBwIjoiNTAiLCJjbGllbnRfdHlwZSI6IkludGVybmFsTXVsdGlBY2NvdW50IiwibmFtZSI6ImxvY2RAemVub3RpLmNvbSIsImFjY291bnRfbmFtZSI6ImFtcnMwMSIsImJyb3dzZXJfaWQiOiI2YzFmN2ZiNS1kN2IwLTQxNDUtYWU4My1kYTVlY2UwMDJjNTciLCJqdGkiOiI0MjU0RTUwQzhCQ0IwQ0I1QTJFMDRBOUI3QzM4RUM5RSIsInNpZCI6IjEzNTNCOEZEQTU5NzI2QzhDNkNGMkUzRUNDN0RCNzMyIiwiaWF0IjoxNzQ1MTI3ODYwLCJzY29wZSI6WyJvcGVuaWQiLCJhcGkiLCJvZmZsaW5lX2FjY2VzcyJdLCJhbXIiOlsicHdkIl19.PytAmy4Sm_pBUjGKbZHIb4snqhflfwot7F7Qa9qgRC5pJCNjX53NgMcZFcLz64ixXudvFZQP1hNf2fZQVvAx5T7F8UlhL5SKg03-R81gfGRUuSaJaSNlKbU18EM337VSQOhN4xSh4BJwwlqYhZ2jV3cYr-cg8EEs0nBHeGQZvgRnFOcMSfYJJ8cbclaJ3dDbSdhdGtPHjhg6lGNV9LcsiowfRjeVgrbnInofwWkB6-R_JOlt5z9XXXWVGSI9GwTUFE7-AILKfca3lVMVeTItHmssre_uyYhaFpjrVZdd7dmQdiRWvbvYicG7atdVIMnuNHDtNYPtNbDLyLO6I0miRA"
 HOST = "https://apiamrs01.zenoti.com"
@@ -213,6 +214,104 @@ async def select_guest(
         return {
             'status': 'error',
             'error_message': f'Guest with ID {guest_id} not found.'
+        }
+
+
+async def check_available_slots(
+    tool_context: ToolContext,
+    date: str = ''
+) -> dict:
+    """Check available appointment slots for the selected service and guest.
+    
+    This tool uses the selected service and guest from the state to check
+    for available appointment slots on the specified date.
+    
+    Args:
+        tool_context: The tool context containing state
+        date (Optional[str]): ISO format date to check availability for. 
+                            If not provided, defaults to current date.
+    
+    Returns:
+        dict: Available appointment slots with status indicating success or failure
+    """
+    # Get selected service and guest from state
+    selected_service = tool_context.state.get('selected_service')
+    selected_guest = tool_context.state.get('selected_guest')
+    
+    if not selected_service or not selected_guest:
+        return {
+            'status': 'error',
+            'error_message': 'Please select both a service and guest first.'
+        }
+    
+    # Convert date string to datetime if provided
+    target_date = None
+    if len(date) > 0:
+        try:
+            target_date = datetime.datetime.fromisoformat(date)
+        except ValueError:
+            return {
+                'status': 'error',
+                'error_message': 'Invalid date format. Please use ISO format (YYYY-MM-DD).'
+            }
+    
+    # Prepare the slots request
+    # slots_request = prepare_slots_request(
+    #     guest=selected_guest,
+    #     service_selections=[selected_service],
+    #     date=target_date,
+    #     center_id=app_context['center_id']
+    # )
+
+    slots_request = {
+        "CenterId": app_context['center_id'],
+        "CenterDate": target_date.isoformat(),
+        "SlotBookings": [
+            {
+            "TherapistId": app_context['therapist_id'],
+            "ConsiderSingleTherapistSlot": True,
+            "Services": [
+                    {
+                        "Service": {
+                        "Quantity": 1,
+                        "Id": selected_service['Id']
+                        
+                        }
+                    }
+                ]
+            }
+        ]
+        }
+    # json format
+    # print(f"Slots request: {json.dumps(slots_request, indent=4)}")
+    # Prepare headers with bearer token
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    
+    # Make the HTTP request
+    url = f'{HOST}/api/v3.0/Appointments/AvailableTimes'
+    
+    try:
+        response = requests.post(url, json=slots_request, headers=headers)
+        response.raise_for_status()
+        
+        # Parse the response
+        data = response.json()
+        
+        # Store the available slots in state for later use
+        tool_context.state['available_slots'] = data['OpenSlots']
+        print(f"Available slots: {data}")
+        return {
+            'status': 'success',
+            'available_slots': data
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'error_message': f'Failed to fetch available slots: {str(e)}'
         }
 
 async def create_guest(
@@ -697,8 +796,9 @@ root_agent = Agent(
         "You can also create a new guest if the guest is not in the system. You have to ask the user for the guest details and then create the guest using the create_guest tool."
         "You can also get the mandatory fields required for guest creation from the organization settings using the get_guest_mandatory_fields tool."
         "You can book a service slot once a slot is reserved using the book_service_slot tool."
+        "You can check the availability of a slot for a service and guest using the check_available_slots tool."
     ),
-    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields, reserve_service_slot, book_service_slot],
+    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields, reserve_service_slot, book_service_slot, check_available_slots],
 )
 
 
