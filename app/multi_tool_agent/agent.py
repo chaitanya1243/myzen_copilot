@@ -592,7 +592,8 @@ async def reserve_service_slot(
         
         # Store the reservation data in state
         tool_context.state['reservation_data'] = data
-        
+        print(data)
+
         # Check if the reservation was successful
         if data.get('Error'):
             return {
@@ -612,6 +613,73 @@ async def reserve_service_slot(
             'error_message': f'Failed to reserve slot: {str(e)}'
         }
 
+async def book_service_slot(
+    tool_context: ToolContext
+) -> dict:
+    """Book a service slot.
+    
+    This tool books a service slot for the previously reserved slot.
+    It requires that a slot has been successfully reserved using the
+    reserve_service_slot tool first.
+
+    Args:
+        tool_context: ToolContext object containing the state of the agent
+    
+    Returns:
+        dict: Information about the booking with status indicating success or failure
+    """
+    # Get reservation data from state
+    reservation_data = tool_context.state.get('reservation_data')
+    
+    if not reservation_data:
+        return {
+            'status': 'error',
+            'error_message': 'No reservation data found. Please reserve a slot first.'
+        }
+    
+    # Create the API endpoint URL
+    url = f'{HOST}/api/appointments/confirmreservation'
+    
+    # Prepare headers with bearer token
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        # Make the API request - sending the reservation data as the payload
+        response = requests.post(url, json=reservation_data, headers=headers)
+        response.raise_for_status()  # Raise exception for non-200 status codes
+        
+        # Parse the response
+        data = response.json()
+        
+        # Store the booking data in state
+        tool_context.state['booking_data'] = data
+        
+        # Check if the booking was successful
+        if data.get('Error'):
+            return {
+                'status': 'error',
+                'error_message': f'API error: {data.get("Error")}'
+            }
+        
+        # Extract appointment details for a cleaner response
+        # appointments = data.get('Appointments', [])
+        # appointment_ids = [appt.get('Id') for appt in appointments if appt.get('Id')]
+        
+        print(data)
+        return {
+            'status': 'success',
+            'message': 'Appointment booked successfully',
+            'booking_details': data
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'error_message': f'Failed to confirm booking: {str(e)}'
+        }
 
 root_agent = Agent(
     name="service_search_agent",
@@ -628,8 +696,9 @@ root_agent = Agent(
         "You are done when you have successfully reserved a slot."
         "You can also create a new guest if the guest is not in the system. You have to ask the user for the guest details and then create the guest using the create_guest tool."
         "You can also get the mandatory fields required for guest creation from the organization settings using the get_guest_mandatory_fields tool."
+        "You can book a service slot once a slot is reserved using the book_service_slot tool."
     ),
-    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields, reserve_service_slot],
+    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields, reserve_service_slot, book_service_slot],
 )
 
 
