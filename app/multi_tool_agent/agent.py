@@ -350,6 +350,99 @@ async def create_guest(
         }
 
 
+async def get_guest_mandatory_fields(
+    tool_context: ToolContext
+) -> dict:
+    """Get the mandatory fields required for guest creation from the organization settings.
+    
+    This tool fetches organization settings and extracts which fields are mandatory
+    when creating a new guest, helping to guide the user through the guest creation process.
+    
+    Returns:
+        dict: A dictionary containing mandatory fields and other relevant guest settings
+    """
+    
+    # Create the API endpoint URL
+    url = f'{HOST}/v1/organizations/settings/all'
+    
+    # Prepare headers with bearer token
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        # Make the API request
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise exception for non-200 status codes
+        
+        # Parse the response
+        data = response.json()
+        
+        # Extract guest mandatory fields
+        mandatory_fields = []
+        is_mobile_required = False
+        other_settings = {}
+        
+        if data and 'guest' in data:
+            # Get mandatory fields array
+            if 'guest_manadatory_fields' in data['guest'] and isinstance(data['guest']['guest_manadatory_fields'], list):
+                mandatory_fields = data['guest']['guest_manadatory_fields']
+            
+            # Check if mobile number is mandatory
+            if 'is_mobile_number_mandatory' in data['guest']:
+                is_mobile_required = data['guest']['is_mobile_number_mandatory']
+            
+            # Get other relevant guest settings
+            other_settings = {
+                'enforceMandatoryFields': data['guest'].get('enforce_guest_fields', False),
+                'checkMinorAge': data['guest'].get('Check_Minor_Age', False),
+                'minorAge': data['guest'].get('Minor_Age', 18),
+                'allowSameEmail': data['guest'].get('Allow_Guest_With_Same_Email_Address', False),
+                'allowSameMobile': data['guest'].get('Allow_Guest_With_Same_Mobile', False),
+                'enableOtherGender': data['guest'].get('Enable_Other_Gender', False)
+            }
+        
+        # Format the fields in a more human-readable way
+        formatted_fields = []
+        for field in mandatory_fields:
+            if field == "dob":
+                formatted_fields.append("Date of Birth")
+            elif field == "email":
+                formatted_fields.append("Email")
+            elif field == "gender":
+                formatted_fields.append("Gender")
+            elif field == "mobile":
+                formatted_fields.append("Mobile Number")
+            elif field == "username":
+                formatted_fields.append("Username")
+            else:
+                # Capitalize the field name
+                formatted_fields.append(field.capitalize())
+        
+        if is_mobile_required and "Mobile Number" not in formatted_fields:
+            formatted_fields.append("Mobile Number")
+        
+        # Store the fields in state for future reference
+        tool_context.state['mandatory_fields'] = formatted_fields
+        tool_context.state['raw_mandatory_fields'] = mandatory_fields
+        tool_context.state['is_mobile_required'] = is_mobile_required
+        tool_context.state['guest_settings'] = other_settings
+        
+        return {
+            'status': 'success',
+            'mandatoryFields': formatted_fields,
+            'rawMandatoryFields': mandatory_fields,
+            'isMobileRequired': is_mobile_required,
+            'otherSettings': other_settings
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'error_message': f'Failed to fetch mandatory fields: {str(e)}'
+        }
+
 
 root_agent = Agent(
     name="service_search_agent",
@@ -364,8 +457,9 @@ root_agent = Agent(
         "You can select a guest from the list of guests. "
         "You are done when you have selected both a service and a guest"
         "You can also create a new guest if the guest is not in the system. You have to ask the user for the guest details and then create the guest using the create_guest tool."
+        "You can also get the mandatory fields required for guest creation from the organization settings using the get_guest_mandatory_fields tool."
     ),
-    tools=[search_services, select_service, search_guests, select_guest, create_guest],
+    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields],
 )
 
 
