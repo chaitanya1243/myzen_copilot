@@ -444,6 +444,175 @@ async def get_guest_mandatory_fields(
         }
 
 
+async def reserve_service_slot(
+    slot_time: str,
+    tool_context: ToolContext
+) -> dict:
+    """Reserve a slot for a service appointment.
+    
+    This tool reserves a time slot for the previously selected service and guest.
+    It requires that both a service and guest have been selected using the 
+    select_service and select_guest tools first.
+    
+    Args:
+        slot_time (str): The time slot to reserve in format 'YYYY-MM-DD HH:MM:SS'
+    
+    Returns:
+        dict: Information about the reservation with status indicating success or failure
+    """
+    # Get previously selected guest and service from state
+    selected_guest = tool_context.state.get('selected_guest')
+    selected_service = tool_context.state.get('selected_service')
+    
+    # Validate that both guest and service are selected
+    if not selected_guest:
+        return {
+            'status': 'error',
+            'error_message': 'No guest selected. Please select a guest first.'
+        }
+    
+    if not selected_service:
+        return {
+            'status': 'error',
+            'error_message': 'No service selected. Please select a service first.'
+        }
+    
+    # Get guest ID from selected guest
+    guest_id = selected_guest.get('Id') or selected_guest.get('guestId')
+    if not guest_id:
+        return {
+            'status': 'error',
+            'error_message': 'Invalid guest information. Missing guest ID.'
+        }
+    
+    # Create the API endpoint URL
+    url = f'{HOST}/api/v2.0/Appointments/ReserveSlots'
+    
+    # Center ID from app context
+    center_id = app_context['center_id']
+    therapist_id = app_context['therapist_id']
+    
+    # Create the service object from the selected service
+    service_object = selected_service
+    
+    # Extract date for center time (use slot_time if provided)
+    center_time = slot_time
+    
+    # Create full payload
+    payload = {
+        "CouplesService": False,
+        "CenterId": center_id,
+        "ReservationId": None,
+        "SlotBookings": [
+            {
+                "GuestId": guest_id,
+                "VirtualGuest": {
+                    "FirstName": None,
+                    "LastName": None,
+                    "Mobile": None,
+                    "Gender": None,
+                },
+                "AppointmentGroupId": None,
+                "waitlist_group_id": None,
+                "quote_pk": None,
+                "RemoveBuddyServiceFinishSegment": True,
+                "SkipAutoOrderingOfServices": False,
+                "email_link": None,
+                "sms_link": None,
+                "appointment_category_id": None,
+                "waitlist_id": None,
+                "SlotBookingIdentifier": "appointment_1",
+                "TherapistId": therapist_id,
+                "BookingNotes": "",
+                "PreferredTime": None,
+                "Price": None,
+                "ConsiderSingleTherapistSlot": True,
+                "Services": [
+                    {
+                        "OrderNo": 2,
+                        "CoupleGroupNo": 1,
+                        "CoupleGroupId": None,
+                        "AppointmentId": None,
+                        "InvoiceItemId": None,
+                        "UIItemIdentifier": "appointment_1#item_2",
+                        "CartItemId": None,
+                        "Lock": False,
+                        "PackageId": None,
+                        "PkgGroupNo": None,
+                        "Service": service_object,
+                        "ResetIfTherapistCanNotDoService": False,
+                        "StartTime": slot_time,
+                        "StartTimeInCenter": None,
+                        "EndTime": None,
+                        "EndTimeInCenter": None,
+                        "RequestedDuration": None,
+                        "RequestedTherapistGender": 3,
+                        "RequestedTherapist": {
+                            "Id": therapist_id
+                        },
+                        "RequestedParallelGroupFk": None,
+                        "Room": None,
+                        "Equipment": None,
+                        "AssignDefaultSlot": True,
+                        "FillOpenSlots": False,
+                        "AppointmentSource": 0,
+                        "Do_Not_Reprocess_Therapist": True,
+                        "IsGuestSpecificDuration": False,
+                        "isGuestSpecificPriceUpdated": False,
+                        "QuoteItemPk": None,
+                        "is_flexi_day_package": False,
+                        "is_service_bundle_day_package": False,
+                        "service_bundle_day_package_id": None,
+                        "service_bundle_day_package_group_no": None,
+                        "service_bundle_package_no": 1,
+                    },
+                ],
+            },
+        ],
+        "CenterTime": center_time,
+        "BookingSource": 2,
+        "IsNoncontiguousSlots": False,
+        "ConsiderOnlyCheckedInEmployees": False,
+        "WaitlistGroupId": None,
+    }
+    
+    # Prepare headers with bearer token
+    headers = {
+        'Authorization': f'Bearer {API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        # Make the API request
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()  # Raise exception for non-200 status codes
+        
+        # Parse the response
+        data = response.json()
+        
+        # Store the reservation data in state
+        tool_context.state['reservation_data'] = data
+        
+        # Check if the reservation was successful
+        if data.get('Error'):
+            return {
+                'status': 'error',
+                'error_message': f'API error: {data.get("Error")}'
+            }
+        
+        return {
+            'status': 'success',
+            'message': f'Appointment slot reserved successfully',
+            'reservation_details': data
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'error_message': f'Failed to reserve slot: {str(e)}'
+        }
+
+
 root_agent = Agent(
     name="service_search_agent",
     model="gemini-2.0-flash-exp",
@@ -455,11 +624,12 @@ root_agent = Agent(
         "You get the service name or guest details from the user. "
         "You can select a service from the list of services. "
         "You can select a guest from the list of guests. "
-        "You are done when you have selected both a service and a guest"
+        "You can reserve a slot for a service appointment once both a service and guest are selected. "
+        "You are done when you have successfully reserved a slot."
         "You can also create a new guest if the guest is not in the system. You have to ask the user for the guest details and then create the guest using the create_guest tool."
         "You can also get the mandatory fields required for guest creation from the organization settings using the get_guest_mandatory_fields tool."
     ),
-    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields],
+    tools=[search_services, select_service, search_guests, select_guest, create_guest, get_guest_mandatory_fields, reserve_service_slot],
 )
 
 
